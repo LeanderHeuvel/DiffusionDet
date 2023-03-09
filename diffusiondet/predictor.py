@@ -36,7 +36,7 @@ class VisualizationDemo(object):
         
         self.threshold = cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST  # workaround
 
-    def run_on_image(self, image):
+    def run_on_image(self, image, path):
         """
         Args:
             image (np.ndarray): an image of shape (H, W, C) (in BGR order).
@@ -47,7 +47,7 @@ class VisualizationDemo(object):
             vis_output (VisImage): the visualized image output.
         """
         vis_output = None
-        predictions = self.predictor(image)
+        predictions = self.predictor(image, path)
         # Filter
         instances = predictions['instances']
         new_instances = instances[instances.scores > self.threshold]

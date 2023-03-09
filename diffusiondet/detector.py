@@ -18,6 +18,7 @@ from detectron2.layers import batched_nms
 from detectron2.modeling import META_ARCH_REGISTRY, build_backbone, detector_postprocess
 
 from detectron2.structures import Boxes, ImageList, Instances
+from diffusiondet.trajectory_tracker import TrajectoryTracker
 
 from .loss import SetCriterionDynamicK, HungarianMatcherDynamicK
 from .head import DynamicHead
@@ -75,6 +76,7 @@ class DiffusionDet(nn.Module):
         self.num_proposals = cfg.MODEL.DiffusionDet.NUM_PROPOSALS
         self.hidden_dim = cfg.MODEL.DiffusionDet.HIDDEN_DIM
         self.num_heads = cfg.MODEL.DiffusionDet.NUM_HEADS
+        self.meta_data = cfg.DATASETS.TEST
 
         # Build Backbone.
         self.backbone = build_backbone(cfg)
@@ -91,6 +93,7 @@ class DiffusionDet(nn.Module):
         timesteps, = betas.shape
         self.num_timesteps = int(timesteps)
 
+        self.trajectory_tracker = TrajectoryTracker(self.meta_data)
         self.sampling_timesteps = default(sampling_timesteps, timesteps)
         assert self.sampling_timesteps <= timesteps
         self.is_ddim_sampling = self.sampling_timesteps < timesteps
@@ -180,7 +183,6 @@ class DiffusionDet(nn.Module):
         x_start = (x_start * 2 - 1.) * self.scale
         x_start = torch.clamp(x_start, min=-1 * self.scale, max=self.scale)
         pred_noise = self.predict_noise_from_start(x, t, x_start)
-
         return ModelPrediction(pred_noise, x_start), outputs_class, outputs_coord
 
     @torch.no_grad()
@@ -188,12 +190,10 @@ class DiffusionDet(nn.Module):
         batch = images_whwh.shape[0]
         shape = (batch, self.num_proposals, 4)
         total_timesteps, sampling_timesteps, eta, objective = self.num_timesteps, self.sampling_timesteps, self.ddim_sampling_eta, self.objective
-
         # [-1, 0, 1, 2, ..., T-1] when sampling_timesteps == total_timesteps
         times = torch.linspace(-1, total_timesteps - 1, steps=sampling_timesteps + 1)
         times = list(reversed(times.int().tolist()))
         time_pairs = list(zip(times[:-1], times[1:]))  # [(T-1, T-2), (T-2, T-3), ..., (1, 0), (0, -1)]
-
         img = torch.randn(shape, device=self.device)
 
         ensemble_score, ensemble_label, ensemble_coord = [], [], []
@@ -201,11 +201,10 @@ class DiffusionDet(nn.Module):
         for time, time_next in time_pairs:
             time_cond = torch.full((batch,), time, device=self.device, dtype=torch.long)
             self_cond = x_start if self.self_condition else None
-
             preds, outputs_class, outputs_coord = self.model_predictions(backbone_feats, images_whwh, img, time_cond,
                                                                          self_cond, clip_x_start=clip_denoised)
+            
             pred_noise, x_start = preds.pred_noise, preds.pred_x_start
-
             if self.box_renewal:  # filter
                 score_per_image, box_per_image = outputs_class[-1][0], outputs_coord[-1][0]
                 threshold = 0.5
@@ -217,22 +216,22 @@ class DiffusionDet(nn.Module):
                 pred_noise = pred_noise[:, keep_idx, :]
                 x_start = x_start[:, keep_idx, :]
                 img = img[:, keep_idx, :]
+
             if time_next < 0:
                 img = x_start
                 continue
-
+            
             alpha = self.alphas_cumprod[time]
             alpha_next = self.alphas_cumprod[time_next]
 
             sigma = eta * ((1 - alpha / alpha_next) * (1 - alpha_next) / (1 - alpha)).sqrt()
             c = (1 - alpha_next - sigma ** 2).sqrt()
-
+            
             noise = torch.randn_like(img)
-
             img = x_start * alpha_next.sqrt() + \
                   c * pred_noise + \
                   sigma * noise
-
+            
             if self.box_renewal:  # filter
                 # replenish with randn boxes
                 img = torch.cat((img, torch.randn(1, self.num_proposals - num_remain, 4, device=img.device)), dim=1)
@@ -243,7 +242,20 @@ class DiffusionDet(nn.Module):
                 ensemble_score.append(scores_per_image)
                 ensemble_label.append(labels_per_image)
                 ensemble_coord.append(box_pred_per_image)
-
+            image_size = images.image_sizes
+            height = batched_inputs[0].get("height", image_size[0][0])
+            width = batched_inputs[0].get("width", image_size[0][1])
+            result = Instances(images.image_sizes[0])
+            result.pred_boxes = Boxes(box_pred_per_image)
+            result.scores = scores_per_image
+            result.pred_classes = labels_per_image
+            r = detector_postprocess(result, height, width)
+            self.trajectory_tracker.record_instance(batched_inputs[0]['path'], r, time)
+        
+        self.trajectory_tracker.store_trajectory()
+        self.trajectory_tracker.print_summed_scores()
+        
+            
         if self.use_ensemble and self.sampling_timesteps > 1:
             box_pred_per_image = torch.cat(ensemble_coord, dim=0)
             scores_per_image = torch.cat(ensemble_score, dim=0)
@@ -259,11 +271,14 @@ class DiffusionDet(nn.Module):
             result.scores = scores_per_image
             result.pred_classes = labels_per_image
             results = [result]
+
         else:
             output = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
             box_cls = output["pred_logits"]
             box_pred = output["pred_boxes"]
             results = self.inference(box_cls, box_pred, images.image_sizes)
+            
+            
         if do_postprocess:
             processed_results = []
             for results_per_image, input_per_image, image_size in zip(results, batched_inputs, images.image_sizes):
@@ -272,6 +287,7 @@ class DiffusionDet(nn.Module):
                 r = detector_postprocess(results_per_image, height, width)
                 processed_results.append({"instances": r})
             return processed_results
+        
 
     # forward diffusion
     def q_sample(self, x_start, t, noise=None):

@@ -216,7 +216,9 @@ class DiffusionDet(nn.Module):
                 pred_noise = pred_noise[:, keep_idx, :]
                 x_start = x_start[:, keep_idx, :]
                 img = img[:, keep_idx, :]
-
+            # compute mean squared error for each timestep the ones that are kept in each iteration.
+            # report the output difference w.r.t. different time_cond values. Report how predictions vary over time. 
+            # report the vectors for each time conditions where random boxes are used as input. See where vectors point to. 
             if time_next < 0:
                 img = x_start
                 continue
@@ -242,18 +244,20 @@ class DiffusionDet(nn.Module):
                 ensemble_score.append(scores_per_image)
                 ensemble_label.append(labels_per_image)
                 ensemble_coord.append(box_pred_per_image)
-            image_size = images.image_sizes
-            height = batched_inputs[0].get("height", image_size[0][0])
-            width = batched_inputs[0].get("width", image_size[0][1])
-            result = Instances(images.image_sizes[0])
-            result.pred_boxes = Boxes(box_pred_per_image)
-            result.scores = scores_per_image
-            result.pred_classes = labels_per_image
-            r = detector_postprocess(result, height, width)
-            self.trajectory_tracker.record_instance(batched_inputs[0]['path'], r, time)
+            # image_size = images.image_sizes
+            # height = batched_inputs[0].get("height", image_size[0][0])
+            # width = batched_inputs[0].get("width", image_size[0][1])
+            # result = Instances(images.image_sizes[0])
+            # result.pred_boxes = Boxes(box_pred_per_image)
+            # result.scores = scores_per_image
+            # result.pred_classes = labels_per_image
+            # r1 = detector_postprocess(result, height, width)
+            # self.trajectory_tracker.record_instance(batched_inputs[0]['path'], r1, time)
+
         
-        self.trajectory_tracker.store_trajectory()
-        self.trajectory_tracker.print_summed_scores()
+        # self.trajectory_tracker.store_trajectory()
+        # self.trajectory_tracker.print_summed_scores()
+        # self.trajectory_tracker.create_gifs()
         
             
         if self.use_ensemble and self.sampling_timesteps > 1:
@@ -324,7 +328,6 @@ class DiffusionDet(nn.Module):
         for f in self.in_features:
             feature = src[f]
             features.append(feature)
-
         # Prepare Proposals.
         if not self.training:
             results = self.ddim_sample(batched_inputs, features, images_whwh, images)

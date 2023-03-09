@@ -112,18 +112,35 @@ if __name__ == "__main__":
             assert args.input, "The input path(s) was not found"
         for path in tqdm.tqdm(args.input, disable=not args.output):
             # use PIL, to be consistent with evaluation
-            img = read_image(path, format="BGR")
-            start_time = time.time()
-            predictions, visualized_output = demo.run_on_image(img, path)
-            logger.info(
-                "{}: {} in {:.2f}s".format(
-                    path,
-                    "detected {} instances".format(len(predictions["instances"]))
-                    if "instances" in predictions
-                    else "finished",
-                    time.time() - start_time,
+            if os.path.isdir(path):
+                files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+                for file in files[:10]:
+                    filename = os.path.join(path,file)
+                    img = read_image(filename, format="BGR")
+                    start_time = time.time()
+                    predictions, visualized_output = demo.run_on_image(img, filename)
+                    logger.info(
+                        "{}: {} in {:.2f}s".format(
+                            path,
+                            "detected {} instances".format(len(predictions["instances"]))
+                            if "instances" in predictions
+                            else "finished",
+                            time.time() - start_time,
+                        )
+                    )
+            else:
+                img = read_image(path, format="BGR")
+                start_time = time.time()
+                predictions, visualized_output = demo.run_on_image(img, path)
+                logger.info(
+                    "{}: {} in {:.2f}s".format(
+                        path,
+                        "detected {} instances".format(len(predictions["instances"]))
+                        if "instances" in predictions
+                        else "finished",
+                        time.time() - start_time,
+                    )
                 )
-            )
 
             if args.output:
                 if os.path.isdir(args.output):

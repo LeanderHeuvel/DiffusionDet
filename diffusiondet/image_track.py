@@ -10,7 +10,7 @@ import imageio
 class ImageTrack:
     def __init__(self, path, datasets_info):
         self.path = path
-        self.threshold = 0.5
+        self.threshold = 0.1
         self.metadata = MetadataCatalog.get(
             datasets_info[0] if len(datasets_info) else "__unused"
         )
@@ -41,7 +41,7 @@ class ImageTrack:
         if self.img_data is None or len(self.img_data) ==0:
             self.generate_imgs()
         filename = name + '_output.gif'
-        imageio.mimsave(filename,self.img_data)
+        imageio.mimsave(filename,self.img_data,duration=0.8)
 
     def set_threshold(self, threshold):
         self.threshold = threshold

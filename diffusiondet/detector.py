@@ -195,17 +195,27 @@ class DiffusionDet(nn.Module):
         times = list(reversed(times.int().tolist()))
         time_pairs = list(zip(times[:-1], times[1:]))  # [(T-1, T-2), (T-2, T-3), ..., (1, 0), (0, -1)]
         img = torch.randn(shape, device=self.device)
-
+        width_img = shape[1]
+        height_img = shape[2]
+        dim_scale = torch.tensor(list((width_img, height_img, width_img, height_img))).to(device=self.device)
+        # scaled = torch.squeeze(img) * dim_scale
         ensemble_score, ensemble_label, ensemble_coord = [], [], []
+        x_boxes = torch.clamp(img, min=-1 * self.scale, max=self.scale)
+        x_boxes = ((x_boxes / self.scale) + 1) / 2
+        x_boxes = box_cxcywh_to_xyxy(x_boxes)
+        x_boxes = x_boxes * images_whwh[:, None, :]
         x_start = None
         for time, time_next in time_pairs:
+            # TODO set self.condition to false. 
             time_cond = torch.full((batch,), time, device=self.device, dtype=torch.long)
+            
             self_cond = x_start if self.self_condition else None
             preds, outputs_class, outputs_coord = self.model_predictions(backbone_feats, images_whwh, img, time_cond,
                                                                          self_cond, clip_x_start=clip_denoised)
-            
+                       
             pred_noise, x_start = preds.pred_noise, preds.pred_x_start
-            if self.box_renewal:  # filter
+
+            if not self.box_renewal:  # filter
                 score_per_image, box_per_image = outputs_class[-1][0], outputs_coord[-1][0]
                 threshold = 0.5
                 score_per_image = torch.sigmoid(score_per_image)
@@ -216,6 +226,7 @@ class DiffusionDet(nn.Module):
                 pred_noise = pred_noise[:, keep_idx, :]
                 x_start = x_start[:, keep_idx, :]
                 img = img[:, keep_idx, :]
+            
             # compute mean squared error for each timestep the ones that are kept in each iteration.
             # report the output difference w.r.t. different time_cond values. Report how predictions vary over time. 
             # report the vectors for each time conditions where random boxes are used as input. See where vectors point to. 
@@ -228,13 +239,15 @@ class DiffusionDet(nn.Module):
 
             sigma = eta * ((1 - alpha / alpha_next) * (1 - alpha_next) / (1 - alpha)).sqrt()
             c = (1 - alpha_next - sigma ** 2).sqrt()
+
+            # for testing purposes disable predicting bounding boxes t+1
+            # noise = torch.randn_like(img)
+            # img = x_start * alpha_next.sqrt() + \
+            #       c * pred_noise + \
+            #       sigma * noise
             
-            noise = torch.randn_like(img)
-            img = x_start * alpha_next.sqrt() + \
-                  c * pred_noise + \
-                  sigma * noise
             
-            if self.box_renewal:  # filter
+            if not self.box_renewal:  # filter
                 # replenish with randn boxes
                 img = torch.cat((img, torch.randn(1, self.num_proposals - num_remain, 4, device=img.device)), dim=1)
             if self.use_ensemble and self.sampling_timesteps > 1:
@@ -244,20 +257,28 @@ class DiffusionDet(nn.Module):
                 ensemble_score.append(scores_per_image)
                 ensemble_label.append(labels_per_image)
                 ensemble_coord.append(box_pred_per_image)
-            # image_size = images.image_sizes
-            # height = batched_inputs[0].get("height", image_size[0][0])
-            # width = batched_inputs[0].get("width", image_size[0][1])
-            # result = Instances(images.image_sizes[0])
-            # result.pred_boxes = Boxes(box_pred_per_image)
-            # result.scores = scores_per_image
-            # result.pred_classes = labels_per_image
-            # r1 = detector_postprocess(result, height, width)
+            
+            image_size = images.image_sizes
+            height = batched_inputs[0].get("height", image_size[0][0])
+            width = batched_inputs[0].get("width", image_size[0][1])
+            result = Instances(images.image_sizes[0])
+
+            result.pred_boxes = Boxes(torch.squeeze(x_boxes)).clone()
+            result.scores = scores_per_image.clone().detach()
+            result.pred_classes = labels_per_image
+            r1 = detector_postprocess(result, height, width)
+            result2 = Instances(images.image_sizes[0])
+            result2.pred_boxes = Boxes(box_pred_per_image).clone()
+            result2.scores = scores_per_image.clone().detach()
+            result2.pred_classes = labels_per_image
+            r2 = detector_postprocess(result2, height, width)
+            self.trajectory_tracker.record_vector_instance(batched_inputs[0]['path'], r1, r2, time)
             # self.trajectory_tracker.record_instance(batched_inputs[0]['path'], r1, time)
 
-        
+
         # self.trajectory_tracker.store_trajectory()
         # self.trajectory_tracker.print_summed_scores()
-        # self.trajectory_tracker.create_gifs()
+        self.trajectory_tracker.create_gifs(draw_vectors = True)
         
             
         if self.use_ensemble and self.sampling_timesteps > 1:

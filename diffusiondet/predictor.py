@@ -37,7 +37,6 @@ class VisualizationDemo(object):
         self.threshold = cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST  # workaround
 
     def run_on_image(self, image, path):
-        print(path)
         """
         Args:
             image (np.ndarray): an image of shape (H, W, C) (in BGR order).
@@ -68,7 +67,7 @@ class VisualizationDemo(object):
                 )
             if "instances" in predictions:
                 instances = predictions["instances"].to(self.cpu_device)
-                vis_output = visualizer.draw_instance_predictions(predictions=instances)
+                vis_output = visualizer.draw_instance_predictions(predictions=instances, draw_vectors=False)
 
         return predictions, vis_output
 

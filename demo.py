@@ -35,6 +35,7 @@ def setup_cfg(args):
     cfg.merge_from_list(args.opts)
     # Set score_threshold for builtin models
     cfg.MODEL.RETINANET.SCORE_THRESH_TEST = args.confidence_threshold
+
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = args.confidence_threshold
     cfg.MODEL.PANOPTIC_FPN.COMBINE.INSTANCES_CONFIDENCE_THRESH = args.confidence_threshold
     cfg.freeze()
@@ -111,6 +112,7 @@ if __name__ == "__main__":
             args.input = glob.glob(os.path.expanduser(args.input[0]))
             assert args.input, "The input path(s) was not found"
         for path in tqdm.tqdm(args.input, disable=not args.output):
+            visualized_output = None
             # use PIL, to be consistent with evaluation
             if os.path.isdir(path):
                 files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
@@ -131,7 +133,8 @@ if __name__ == "__main__":
             else:
                 img = read_image(path, format="BGR")
                 start_time = time.time()
-                predictions, visualized_output = demo.run_on_image(img, path)
+                # predictions, visualized_output = demo.run_on_image(img, path)
+                predictions = demo.multiple_runs_on_image(img, path, runs=10)
                 logger.info(
                     "{}: {} in {:.2f}s".format(
                         path,
@@ -149,7 +152,8 @@ if __name__ == "__main__":
                 else:
                     assert len(args.input) == 1, "Please specify a directory with args.output"
                     out_filename = args.output
-                visualized_output.save(out_filename)
+                if visualized_output is not None:
+                    visualized_output.save(out_filename)
             else:
                 cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
                 cv2.imshow(WINDOW_NAME, visualized_output.get_image()[:, :, ::-1])

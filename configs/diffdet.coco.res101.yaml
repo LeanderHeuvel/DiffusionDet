@@ -7,6 +7,8 @@ MODEL:
   DiffusionDet:
     NUM_PROPOSALS: 500
     NUM_CLASSES: 80
+    THRESHOLD: 0.1
+    PLOT_BOXES: False
 DATASETS:
   TRAIN: ("coco_2017_train",)
   TEST:  ("coco_2017_val",)

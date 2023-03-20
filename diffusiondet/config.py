@@ -50,10 +50,11 @@ def add_diffusiondet_config(cfg):
     # Diffusion
     cfg.MODEL.DiffusionDet.SNR_SCALE = 2.0
     cfg.MODEL.DiffusionDet.SAMPLE_STEP = 10
-
+    cfg.MODEL.DiffusionDet.THRESHOLD = 0.5
     # Inference
     cfg.MODEL.DiffusionDet.USE_NMS = True
-
+    # Plotting
+    cfg.MODEL.DiffusionDet.PLOT_BOXES = False
     # Swin Backbones
     cfg.MODEL.SWIN = CN()
     cfg.MODEL.SWIN.SIZE = 'B'  # 'T', 'S', 'B'

@@ -10,6 +10,7 @@ from detectron2.data import MetadataCatalog
 from detectron2.engine.defaults import DefaultPredictor
 from detectron2.utils.video_visualizer import VideoVisualizer
 from detectron2.utils.visualizer import ColorMode, Visualizer
+from diffusiondet.trajectory_tracker import TrajectoryTracker
 
 
 class VisualizationDemo(object):
@@ -24,6 +25,7 @@ class VisualizationDemo(object):
         self.metadata = MetadataCatalog.get(
             cfg.DATASETS.TEST[0] if len(cfg.DATASETS.TEST) else "__unused"
         )
+        self.cfg = cfg
         self.cpu_device = torch.device("cpu")
         self.instance_mode = instance_mode
 
@@ -67,9 +69,33 @@ class VisualizationDemo(object):
                 )
             if "instances" in predictions:
                 instances = predictions["instances"].to(self.cpu_device)
-                vis_output = visualizer.draw_instance_predictions(predictions=instances, draw_vectors=False)
-
+                vis_output = visualizer.draw_instance_predictions(predictions=instances, draw_vectors=[0,0])
+        
         return predictions, vis_output
+    
+    def multiple_runs_on_image(self, image, path, runs=10):
+        """
+        Args:
+            image (np.ndarray): an image of shape (H, W, C) (in BGR order).
+                This is the format used by OpenCV.
+
+        Returns:
+            predictions (dict): the output of the model.
+            vis_output (VisImage): the visualized image output.
+        """
+        trajectory_tracker = TrajectoryTracker(self.metadata, self.cfg)
+        for i in range(runs):
+            vis_output = None
+            predictions = self.predictor(image, path)
+            # Filter
+            instances = predictions['instances']
+            new_instances = instances[instances.scores > 0.0]
+            predictions = {'instances': new_instances}
+            trajectory_tracker.record_instance(path, predictions['instances'], i)
+            # Convert image from OpenCV BGR format to Matplotlib RGB format.
+            image = image[:, :, ::-1]
+        trajectory_tracker.generate_analysis(measure="mean", name="img1_attempt2_multiple_runs_plot_")
+        return predictions
 
     def _frame_from_video(self, video):
         while video.isOpened():

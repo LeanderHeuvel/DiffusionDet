@@ -5,10 +5,10 @@ MODEL:
     DEPTH: 50
     STRIDE_IN_1X1: False
   DiffusionDet:
-    NUM_PROPOSALS: 500
-    NUM_CLASSES: 80
+    NUM_PROPOSALS: 300
+    NUM_CLASSES: 11
 DATASETS:
-  TRAIN: ("coco_2017_train",)
+  TRAIN: ("visdrone",)
   TEST:  ("coco_2017_val",)
 SOLVER:
   STEPS: (350000, 420000)

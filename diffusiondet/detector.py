@@ -93,7 +93,7 @@ class DiffusionDet(nn.Module):
         timesteps, = betas.shape
         self.num_timesteps = int(timesteps)
 
-        self.trajectory_tracker = TrajectoryTracker(self.meta_data)
+        self.trajectory_tracker = TrajectoryTracker(self.meta_data, cfg)
         self.sampling_timesteps = default(sampling_timesteps, timesteps)
         assert self.sampling_timesteps <= timesteps
         self.is_ddim_sampling = self.sampling_timesteps < timesteps
@@ -141,7 +141,6 @@ class DiffusionDet(nn.Module):
         self.use_focal = cfg.MODEL.DiffusionDet.USE_FOCAL
         self.use_fed_loss = cfg.MODEL.DiffusionDet.USE_FED_LOSS
         self.use_nms = cfg.MODEL.DiffusionDet.USE_NMS
-
         # Build Criterion.
         matcher = HungarianMatcherDynamicK(
             cfg=cfg, cost_class=class_weight, cost_bbox=l1_weight, cost_giou=giou_weight, use_focal=self.use_focal
@@ -215,7 +214,7 @@ class DiffusionDet(nn.Module):
                        
             pred_noise, x_start = preds.pred_noise, preds.pred_x_start
 
-            if not self.box_renewal:  # filter
+            if self.box_renewal:  # filter
                 score_per_image, box_per_image = outputs_class[-1][0], outputs_coord[-1][0]
                 threshold = 0.5
                 score_per_image = torch.sigmoid(score_per_image)
@@ -241,13 +240,13 @@ class DiffusionDet(nn.Module):
             c = (1 - alpha_next - sigma ** 2).sqrt()
 
             # for testing purposes disable predicting bounding boxes t+1
-            # noise = torch.randn_like(img)
-            # img = x_start * alpha_next.sqrt() + \
-            #       c * pred_noise + \
-            #       sigma * noise
+            noise = torch.randn_like(img)
+            img = x_start * alpha_next.sqrt() + \
+                  c * pred_noise + \
+                  sigma * noise
             
             
-            if not self.box_renewal:  # filter
+            if self.box_renewal:  # filter
                 # replenish with randn boxes
                 img = torch.cat((img, torch.randn(1, self.num_proposals - num_remain, 4, device=img.device)), dim=1)
             if self.use_ensemble and self.sampling_timesteps > 1:
@@ -261,24 +260,26 @@ class DiffusionDet(nn.Module):
             image_size = images.image_sizes
             height = batched_inputs[0].get("height", image_size[0][0])
             width = batched_inputs[0].get("width", image_size[0][1])
-            result = Instances(images.image_sizes[0])
+            # result = Instances(images.image_sizes[0])
 
-            result.pred_boxes = Boxes(torch.squeeze(x_boxes)).clone()
-            result.scores = scores_per_image.clone().detach()
-            result.pred_classes = labels_per_image
-            r1 = detector_postprocess(result, height, width)
+            # result.pred_boxes = Boxes(torch.squeeze(x_boxes)).clone()
+            # result.scores = scores_per_image.clone().detach()
+            # result.pred_classes = labels_per_image
+            # r1 = detector_postprocess(result, height, width)
             result2 = Instances(images.image_sizes[0])
             result2.pred_boxes = Boxes(box_pred_per_image).clone()
             result2.scores = scores_per_image.clone().detach()
             result2.pred_classes = labels_per_image
             r2 = detector_postprocess(result2, height, width)
-            self.trajectory_tracker.record_vector_instance(batched_inputs[0]['path'], r1, r2, time)
-            # self.trajectory_tracker.record_instance(batched_inputs[0]['path'], r1, time)
+            # self.trajectory_tracker.record_vector_instance(batched_inputs[0]['path'], r1, r2, time)
+            # self.trajectory_tracker.record_instance(batched_inputs[0]['path'], r2, time)
 
+        # self.trajectory_tracker.generate_analysis(measure="sd",name="img1_attempt2_time_plot_")
 
         # self.trajectory_tracker.store_trajectory()
         # self.trajectory_tracker.print_summed_scores()
-        self.trajectory_tracker.create_gifs(draw_vectors = True)
+        # self.trajectory_tracker.create_gifs(draw_vectors = True)
+        # self.trajectory_tracker.plot_heatmaps()
         
             
         if self.use_ensemble and self.sampling_timesteps > 1:

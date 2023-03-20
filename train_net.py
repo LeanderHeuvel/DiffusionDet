@@ -17,6 +17,7 @@ import weakref
 from typing import Any, Dict, List, Set
 import logging
 from collections import OrderedDict
+import cv2
 
 import torch
 from fvcore.nn.precise_bn import get_bn_modules
@@ -111,11 +112,39 @@ class Trainer(DefaultTrainer):
             return LVISEvaluator(dataset_name, cfg, True, output_folder)
         else:
             return COCOEvaluator(dataset_name, cfg, True, output_folder)
+    @classmethod
+    def dataset_mapper(self, img_path,annotations_path):
+        ls = []
+        for id, filename in enumerate(os.listdir(img_path)):
+            image  = {}
+            image['file_name'] = img_path + filename
+            img = cv2.imread(image['file_name'])
+            image['height'] = img.shape[0]
+            image['width'] = img.shape[1]
+            image['image_id'] = id
+            filename.split('.')[0]
+            instances = []
+            with open(annotations_path+filename.split('.')[0]+'.txt', 'r') as f:
+                for line in f.readlines():
+                    instance = {}
+                    coords = line.split(',')[:4]
+                    instance['bbox'] = list(map(int, coords))
+                    instance['bbox_mode'] = 1
+                    instance['category_id'] = int(line.split(',')[5])
+                    instances.append(instance)
+            image['annotations'] = instances
+            ls.append(image)
+        return ls 
 
     @classmethod
     def build_train_loader(cls, cfg):
         mapper = DiffusionDetDatasetMapper(cfg, is_train=True)
-        return build_detection_train_loader(cfg, mapper=mapper)
+        img_path = 'data/VisDrone2019-DET-train/images/'
+        annotations_path = 'data/VisDrone2019-DET-train/annotations/'
+        dataset = cls.dataset_mapper(img_path, annotations_path)
+        return build_detection_train_loader(cfg, dataset = dataset, mapper=mapper)
+  
+
 
     @classmethod
     def build_optimizer(cls, cfg, model):

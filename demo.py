@@ -134,7 +134,7 @@ if __name__ == "__main__":
                 img = read_image(path, format="BGR")
                 start_time = time.time()
                 # predictions, visualized_output = demo.run_on_image(img, path)
-                predictions = demo.multiple_runs_on_image(img, path, runs=10)
+                predictions = demo.multiple_runs_on_image(img, path, runs=1)
                 logger.info(
                     "{}: {} in {:.2f}s".format(
                         path,

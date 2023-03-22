@@ -86,7 +86,7 @@ class VisualizationDemo(object):
         trajectory_tracker = TrajectoryTracker(self.metadata, self.cfg)
         for i in range(runs):
             vis_output = None
-            predictions = self.predictor(image, path)
+            predictions = self.predictor(image)
             # Filter
             instances = predictions['instances']
             new_instances = instances[instances.scores > 0.0]

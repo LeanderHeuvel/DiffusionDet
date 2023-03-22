@@ -16,6 +16,8 @@ from torch import nn
 
 from detectron2.layers import batched_nms
 from detectron2.modeling import META_ARCH_REGISTRY, build_backbone, detector_postprocess
+from detectron2.data.detection_utils import read_image
+from detectron2.utils.visualizer import ColorMode, Visualizer
 
 from detectron2.structures import Boxes, ImageList, Instances
 from diffusiondet.trajectory_tracker import TrajectoryTracker
@@ -260,12 +262,14 @@ class DiffusionDet(nn.Module):
             image_size = images.image_sizes
             height = batched_inputs[0].get("height", image_size[0][0])
             width = batched_inputs[0].get("width", image_size[0][1])
-            # result = Instances(images.image_sizes[0])
+            result = Instances(images.image_sizes[0])
 
-            # result.pred_boxes = Boxes(torch.squeeze(x_boxes)).clone()
-            # result.scores = scores_per_image.clone().detach()
-            # result.pred_classes = labels_per_image
-            # r1 = detector_postprocess(result, height, width)
+            result.pred_boxes = Boxes(torch.squeeze(x_boxes)).clone()
+            result.scores = scores_per_image.clone().detach()
+            result.pred_classes = labels_per_image
+            r1 = detector_postprocess(result, height, width)
+            vis_img = Visualizer(read_image('img_results/input2.jpg')).draw_instance_predictions(r1.to(torch.device("cpu")))
+            vis_img.save("output_randboxes")
             result2 = Instances(images.image_sizes[0])
             result2.pred_boxes = Boxes(box_pred_per_image).clone()
             result2.scores = scores_per_image.clone().detach()

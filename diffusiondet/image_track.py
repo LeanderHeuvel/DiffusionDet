@@ -16,6 +16,7 @@ class ImageTrack:
         self.metadata = MetadataCatalog.get(
             datasets_info[0] if len(datasets_info) else "__unused"
         )
+        print(self.metadata)
         self.samplestep = 0
         self.instances = []
         self.cpu_device = torch.device("cpu")

@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import os 
 from detectron2.utils.visualizer import ColorMode, Visualizer
@@ -16,13 +15,13 @@ class ImageTrack:
         self.metadata = MetadataCatalog.get(
             datasets_info[0] if len(datasets_info) else "__unused"
         )
-        print(self.metadata)
         self.samplestep = 0
         self.instances = []
         self.cpu_device = torch.device("cpu")
         self.img_data = []
         self.image_size = None
         self.instances_vectors = []
+        self.classes_interest = [2]
 
     def load_img(self):
         return read_image(self.path, format="BGR")
@@ -34,8 +33,6 @@ class ImageTrack:
         if self.image_size is None:
             self.image_size = instance.image_size
         self.instances.append((instance, samplestep))
-        print("appended instance")
-        print(len(self.instances))
     
     def record_vector_instance(self, instance_rand, instance_pred, samplestep):
         if self.image_size is None:
@@ -116,7 +113,9 @@ class ImageTrack:
             boxes = instance_pred.pred_boxes
             scores = instance_pred.scores.cpu().numpy()
             boxes = self._convert_boxes(boxes.to(torch.device("cpu")))
-            for idx, box in enumerate(boxes):
+            pred_classes = instance_pred.pred_classes.cpu().numpy()
+            keep_dim_classes = pred_classes==0
+            for idx, box in enumerate(boxes[keep_dim_classes]):
                 box = [int(i) for i in box]
                 heatmap[box[1]:box[3], box[0]:box[2], :] += np.full((abs(box[1]-box[3]), abs(box[0]-box[2]), 3), scores[idx])
         return heatmap/len(self.instances)
@@ -131,7 +130,9 @@ class ImageTrack:
             scores = instance_pred.scores.cpu().numpy()
             boxes = self._convert_boxes(boxes.to(torch.device("cpu")))
             x = np.zeros(img_shape)
-            for idx, box in enumerate(boxes):
+            pred_classes = instance_pred.pred_classes.cpu().numpy()
+            keep_dim_classes = pred_classes==0
+            for idx, box in enumerate(boxes[keep_dim_classes]):
                 box = [int(i) for i in box]
                 x[box[1]:box[3], box[0]:box[2], :] += np.full((abs(box[1]-box[3]), abs(box[0]-box[2]),3), scores[idx])
             sum_squared += (x - mean)**2
@@ -148,6 +149,7 @@ class ImageTrack:
         superimposed = cv2.addWeighted(heatmap_img,0.5, img,0.5,0)
         filename = name + '.jpg'
         cv2.imwrite(filename, superimposed)
+        print("Created plot "+ name, " over ", len(self.instances), " runs")
 
     def generate_analysis(self, name = "plot", measure="mean",): #DONE
         if measure == "mean":

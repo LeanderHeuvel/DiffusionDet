@@ -94,7 +94,7 @@ class VisualizationDemo(object):
             trajectory_tracker.record_instance(path, predictions['instances'], i)
             # Convert image from OpenCV BGR format to Matplotlib RGB format.
             image = image[:, :, ::-1]
-        trajectory_tracker.generate_analysis(measure="mean", name="img1_attempt2_multiple_runs_plot_")
+        trajectory_tracker.generate_analysis(measure="sd", name="img1_attempt2_multiple_runs_plot_")
         return predictions
 
     def _frame_from_video(self, video):

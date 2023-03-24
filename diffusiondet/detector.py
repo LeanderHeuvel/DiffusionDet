@@ -268,8 +268,8 @@ class DiffusionDet(nn.Module):
             result.scores = scores_per_image.clone().detach()
             result.pred_classes = labels_per_image
             r1 = detector_postprocess(result, height, width)
-            vis_img = Visualizer(read_image('img_results/input2.jpg')).draw_instance_predictions(r1.to(torch.device("cpu")))
-            vis_img.save("output_randboxes")
+            # vis_img = Visualizer(read_image('img_results/input2.jpg')).draw_instance_predictions(r1.to(torch.device("cpu")))
+            # vis_img.save("output_randboxes")
             result2 = Instances(images.image_sizes[0])
             result2.pred_boxes = Boxes(box_pred_per_image).clone()
             result2.scores = scores_per_image.clone().detach()

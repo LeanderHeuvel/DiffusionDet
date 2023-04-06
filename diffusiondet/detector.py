@@ -9,10 +9,12 @@ import math
 import random
 from typing import List
 from collections import namedtuple
+import numpy as np
 
 import torch
 import torch.nn.functional as F
 from torch import nn
+# from torchvision.ops import batched_nms
 
 from detectron2.layers import batched_nms
 from detectron2.modeling import META_ARCH_REGISTRY, build_backbone, detector_postprocess
@@ -79,7 +81,7 @@ class DiffusionDet(nn.Module):
         self.hidden_dim = cfg.MODEL.DiffusionDet.HIDDEN_DIM
         self.num_heads = cfg.MODEL.DiffusionDet.NUM_HEADS
         self.meta_data = cfg.DATASETS.TEST
-
+        self.runs = 1
         # Build Backbone.
         self.backbone = build_backbone(cfg)
         self.size_divisibility = self.backbone.size_divisibility
@@ -102,7 +104,7 @@ class DiffusionDet(nn.Module):
         self.ddim_sampling_eta = 1.
         self.self_condition = False
         self.scale = cfg.MODEL.DiffusionDet.SNR_SCALE
-        self.box_renewal = True
+        self.box_renewal = False
         self.use_ensemble = True
 
         self.register_buffer('betas', betas)
@@ -170,6 +172,8 @@ class DiffusionDet(nn.Module):
                 (extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t - x0) /
                 extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape)
         )
+    def set_runs(self, runs):
+        self.runs = runs
 
     def model_predictions(self, backbone_feats, images_whwh, x, t, x_self_cond=None, clip_x_start=False):
         x_boxes = torch.clamp(x, min=-1 * self.scale, max=self.scale)
@@ -207,7 +211,6 @@ class DiffusionDet(nn.Module):
         x_boxes = x_boxes * images_whwh[:, None, :]
         x_start = None
         for time, time_next in time_pairs:
-            # TODO set self.condition to false. 
             time_cond = torch.full((batch,), time, device=self.device, dtype=torch.long)
             
             self_cond = x_start if self.self_condition else None
@@ -259,22 +262,22 @@ class DiffusionDet(nn.Module):
                 ensemble_label.append(labels_per_image)
                 ensemble_coord.append(box_pred_per_image)
             
-            image_size = images.image_sizes
-            height = batched_inputs[0].get("height", image_size[0][0])
-            width = batched_inputs[0].get("width", image_size[0][1])
-            result = Instances(images.image_sizes[0])
+            # image_size = images.image_sizes
+            # height = batched_inputs[0].get("height", image_size[0][0])
+            # width = batched_inputs[0].get("width", image_size[0][1])
+            # result = Instances(images.image_sizes[0])
 
-            result.pred_boxes = Boxes(torch.squeeze(x_boxes)).clone()
-            result.scores = scores_per_image.clone().detach()
-            result.pred_classes = labels_per_image
-            r1 = detector_postprocess(result, height, width)
-            # vis_img = Visualizer(read_image('img_results/input2.jpg')).draw_instance_predictions(r1.to(torch.device("cpu")))
-            # vis_img.save("output_randboxes")
-            result2 = Instances(images.image_sizes[0])
-            result2.pred_boxes = Boxes(box_pred_per_image).clone()
-            result2.scores = scores_per_image.clone().detach()
-            result2.pred_classes = labels_per_image
-            r2 = detector_postprocess(result2, height, width)
+            # result.pred_boxes = Boxes(torch.squeeze(x_boxes)).clone()
+            # result.scores = scores_per_image.clone().detach()
+            # result.pred_classes = labels_per_image
+            # r1 = detector_postprocess(result, height, width)
+            # # vis_img = Visualizer(read_image('img_results/input2.jpg')).draw_instance_predictions(r1.to(torch.device("cpu")))
+            # # vis_img.save("output_randboxes")
+            # result2 = Instances(images.image_sizes[0])
+            # result2.pred_boxes = Boxes(box_pred_per_image).clone()
+            # result2.scores = scores_per_image.clone().detach()
+            # result2.pred_classes = labels_per_image
+            # r2 = detector_postprocess(result2, height, width)
             # self.trajectory_tracker.record_vector_instance(batched_inputs[0]['path'], r1, r2, time)
             # self.trajectory_tracker.record_instance(batched_inputs[0]['path'], r2, time)
 
@@ -347,7 +350,6 @@ class DiffusionDet(nn.Module):
         images, images_whwh = self.preprocess_image(batched_inputs)
         if isinstance(images, (list, torch.Tensor)):
             images = nested_tensor_from_tensor_list(images)
-
         # Feature Extraction.
         src = self.backbone(images.tensor)
         features = list()
@@ -356,8 +358,34 @@ class DiffusionDet(nn.Module):
             features.append(feature)
         # Prepare Proposals.
         if not self.training:
-            results = self.ddim_sample(batched_inputs, features, images_whwh, images)
-            return results
+            for i in range(self.runs):
+                results = self.ddim_sample(batched_inputs, features, images_whwh, images)
+                for idx, result in enumerate(results):
+                    filename = batched_inputs[idx]['file_name']
+                    self.trajectory_tracker.record_instance(filename, result['instances'], i)
+            batched_results = self.trajectory_tracker.nms_instances()
+            return [{"instances":self.convert_idxs(result)} for result in batched_results]
+            # return [{"instances":self.trajectory_tracker.nms_instances()}]
+            # boxes, idxs = self.trajectory_tracker.generate_analysis()
+            # boxes = boxes[0].to(self.device)
+            # idxs = idxs[0].to(self.device)
+            # instances = results[0]['instances']
+            # instances = instances[instances.scores > 0.5]
+            # fake_scores = torch.tensor(np.zeros(boxes.size()[0])).to(self.device)
+            # pred_boxes = instances.pred_boxes
+            
+            # pred_scores = instances.scores
+            # pred_classes = instances.pred_classes
+            # scores_merged = torch.cat((pred_scores, fake_scores), axis=0)
+            # boxes_merged = torch.cat((pred_boxes.tensor, boxes), axis=0)
+            # classes_merged = torch.cat((pred_classes, idxs), axis=0)
+            # keep = batched_nms(boxes_merged, scores_merged, classes_merged, 0.4)
+            # result = Instances(images.image_sizes[0])
+            # result.pred_boxes = Boxes(boxes_merged[keep,:])
+            # result.scores = scores_merged[keep]
+            # result.pred_classes = classes_merged[keep]
+            # result = self.convert_idxs(result)
+            # return [{"instances":result}]
 
         if self.training:
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
@@ -378,7 +406,24 @@ class DiffusionDet(nn.Module):
                 if k in weight_dict:
                     loss_dict[k] *= weight_dict[k]
             return loss_dict
-
+    def convert_idxs(self, instances):
+        # ["ignored_regions","pedestrian", "people","bicyle","car","van", "truck","tricycle","awning-tricyle","bus","motor", "others"]
+        ## convert idx of car:2, to idx 4
+        ## convert idx of bus:5 to idx 9
+        ## convert idx of truck:7 to idx 6
+        ## convert idx of person:0 to idx 1
+        keep_classes = (instances.pred_classes==2) | (instances.pred_classes==5) | (instances.pred_classes==7) | (instances.pred_classes==0) 
+        instances = instances[keep_classes]
+        car_idx = (instances.pred_classes==2)
+        bus_idx = (instances.pred_classes==5)
+        truck_idx = (instances.pred_classes==7)
+        person_idx = (instances.pred_classes==0)
+        # print(len(instances.pred_classes[truck_idx]))
+        instances.pred_classes[car_idx] = 4
+        instances.pred_classes[bus_idx] = 9
+        instances.pred_classes[truck_idx] = 6
+        instances.pred_classes[person_idx] = 1
+        return instances
     def prepare_diffusion_repeat(self, gt_boxes):
         """
         :param gt_boxes: (cx, cy, w, h), normalized

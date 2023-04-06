@@ -15,6 +15,8 @@ def add_diffusiondet_config(cfg):
     cfg.MODEL.DiffusionDet = CN()
     cfg.MODEL.DiffusionDet.NUM_CLASSES = 80
     cfg.MODEL.DiffusionDet.NUM_PROPOSALS = 300
+    cfg.MODEL.DiffusionDet.NUM_RUNS = [0,10]
+    cfg.MODEL.DiffusionDet.AGGREGATE = 'mean'
 
     # RCNN Head.
     cfg.MODEL.DiffusionDet.NHEADS = 8

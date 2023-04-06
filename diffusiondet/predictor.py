@@ -5,6 +5,7 @@ import multiprocessing as mp
 from collections import deque
 import cv2
 import torch
+import torchvision
 
 from detectron2.data import MetadataCatalog
 from detectron2.engine.defaults import DefaultPredictor
@@ -52,8 +53,8 @@ class VisualizationDemo(object):
         predictions = self.predictor(image, path)
         # Filter
         instances = predictions['instances']
-        new_instances = instances[instances.scores > self.threshold]
-        predictions = {'instances': new_instances}
+        instances = instances[instances.scores >= 0.0]
+        predictions = {'instances': instances}
         # Convert image from OpenCV BGR format to Matplotlib RGB format.
         image = image[:, :, ::-1]
         visualizer = Visualizer(image, self.metadata, instance_mode=self.instance_mode)
@@ -69,11 +70,11 @@ class VisualizationDemo(object):
                 )
             if "instances" in predictions:
                 instances = predictions["instances"].to(self.cpu_device)
-                vis_output = visualizer.draw_instance_predictions(predictions=instances, draw_vectors=[0,0])
+                vis_output = visualizer.draw_instance_predictions(predictions=instances)
         
         return predictions, vis_output
     
-    def multiple_runs_on_image(self, image, path, runs=10):
+    def multiple_runs_on_image(self, image, path, runs=10, aggregate = 'mean'):
         """
         Args:
             image (np.ndarray): an image of shape (H, W, C) (in BGR order).
@@ -84,17 +85,19 @@ class VisualizationDemo(object):
             vis_output (VisImage): the visualized image output.
         """
         trajectory_tracker = TrajectoryTracker(self.metadata, self.cfg)
+        final_predictions = None
         for i in range(runs):
             vis_output = None
             predictions = self.predictor(image)
             # Filter
             instances = predictions['instances']
             new_instances = instances[instances.scores > 0.0]
+            # final_predictions = instances[instances.scores > 0.5]
             predictions = {'instances': new_instances}
             trajectory_tracker.record_instance(path, predictions['instances'], i)
             # Convert image from OpenCV BGR format to Matplotlib RGB format.
-            image = image[:, :, ::-1]
-        trajectory_tracker.generate_analysis(measure="sd", name="img1_attempt2_multiple_runs_plot_")
+            image = image[:, :, ::-1] 
+        boxes = trajectory_tracker.generate_analysis(measure=aggregate, name="img1_attempt2_multiple_runs_plot_")[0]
         return predictions
 
     def _frame_from_video(self, video):

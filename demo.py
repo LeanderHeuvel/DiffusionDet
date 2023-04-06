@@ -13,6 +13,8 @@ import tqdm
 from detectron2.config import get_cfg
 from detectron2.data.detection_utils import read_image
 from detectron2.utils.logger import setup_logger
+from detectron2.data import DatasetCatalog
+from detectron2.data import MetadataCatalog
 
 from diffusiondet.predictor import VisualizationDemo
 from diffusiondet import DiffusionDetDatasetMapper, add_diffusiondet_config, DiffusionDetWithTTA
@@ -94,7 +96,31 @@ def test_opencv_video_format(codec, file_ext):
         if os.path.isfile(filename):
             return True
         return False
-
+    
+def dataset_mapper(img_path = 'data/VisDrone2019-DET-train/images/',annotations_path = 'data/VisDrone2019-DET-train/annotations/'):
+    ls = []
+    keep = [2,4,5] # keep car, bus truck
+    for id, filename in enumerate(os.listdir(img_path)):
+        image  = {}
+        image['file_name'] = img_path + filename
+        img = cv2.imread(image['file_name'])
+        image['height'] = img.shape[0]
+        image['width'] = img.shape[1]
+        image['image_id'] = id
+        filename.split('.')[0]
+        instances = []
+        with open(annotations_path+filename.split('.')[0]+'.txt', 'r') as f:
+            for line in f.readlines():
+                instance = {}
+                coords = line.split(',')[:4]
+                instance['bbox'] = list(map(int, coords))
+                instance['bbox_mode'] = 1
+                instance['category_id'] = int(line.split(',')[5])
+                if instance['category_id'] in keep:
+                    instances.append(instance)
+        image['annotations'] = instances
+        ls.append(image)
+    return ls
 
 if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)
@@ -103,6 +129,11 @@ if __name__ == "__main__":
     logger = setup_logger()
     logger.info("Arguments: " + str(args))
 
+    DatasetCatalog.register("visdrone_train", dataset_mapper)
+    MetadataCatalog.get("visdrone_train").thing_classes = ["pedestrian", "person","car","van","bus", "truck", "motor", "bicycle", "awning-tricycle","tricycle"]
+    # MetadataCatalog.get("visdrone_train").thing_dataset_id_to_contiguous_id
+    DatasetCatalog.register("visdrone_val", dataset_mapper)
+    MetadataCatalog.get("visdrone_val").thing_classes = ["pedestrian", "person","car","van","bus", "truck", "motor", "bicycle", "awning-tricycle","tricycle"]
     cfg = setup_cfg(args)
 
     demo = VisualizationDemo(cfg)
@@ -133,8 +164,8 @@ if __name__ == "__main__":
             else:
                 img = read_image(path, format="BGR")
                 start_time = time.time()
-                # predictions, visualized_output = demo.run_on_image(img, path)
-                predictions = demo.multiple_runs_on_image(img, path, runs=10)
+                predictions, visualized_output = demo.run_on_image(img, path)
+                # predictions = demo.multiple_runs_on_image(img, path, runs=10)
                 logger.info(
                     "{}: {} in {:.2f}s".format(
                         path,

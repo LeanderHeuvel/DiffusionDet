@@ -10,8 +10,8 @@ MODEL:
     THRESHOLD: 0.1
     PLOT_BOXES: False
 DATASETS:
-  TRAIN: ("coco_2017_train",)
-  TEST:  ("coco_2017_val",)
+  TRAIN: ("visdrone_train",)
+  TEST:  ("visdrone_val",)
 SOLVER:
   STEPS: (350000, 420000)
   MAX_ITER: 450000

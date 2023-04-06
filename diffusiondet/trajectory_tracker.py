@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from diffusiondet.image_track import ImageTrack
+import random
 
 '''
 The TrajectoryTracker can keep track of boxes and coordinates and plot these
@@ -50,8 +51,12 @@ class TrajectoryTracker:
         store_img(list(self.store.values()))
 
     def generate_analysis(self, measure = "mean", name = "plot"):
-        store_img = np.frompyfunc(lambda x: x.generate_analysis(measure=measure, name=name), 1,0)
-        store_img(list(self.store.values()))
+        store_img = np.frompyfunc(lambda x: x.generate_analysis(measure=measure, name=name), 1,2)
+        return store_img(list(self.store.values()))
+    
+    def nms_instances(self):
+        store_img = np.frompyfunc(lambda x: x.nms_instances(), 1,1)
+        return store_img(list(self.store.values()))
 
     def __str__(self) -> str:
         return str(self.store)

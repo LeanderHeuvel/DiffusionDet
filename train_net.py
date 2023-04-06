@@ -22,6 +22,8 @@ import cv2
 import torch
 from fvcore.nn.precise_bn import get_bn_modules
 
+from dataset import dataset_mapper
+
 import detectron2.utils.comm as comm
 from detectron2.utils.logger import setup_logger
 from detectron2.checkpoint import DetectionCheckpointer
@@ -32,6 +34,8 @@ from detectron2.engine import DefaultTrainer, default_argument_parser, default_s
 from detectron2.evaluation import COCOEvaluator, LVISEvaluator, verify_results
 from detectron2.solver.build import maybe_add_gradient_clipping
 from detectron2.modeling import build_model
+from detectron2.data import DatasetCatalog
+from detectron2.data import MetadataCatalog
 
 from diffusiondet import DiffusionDetDatasetMapper, add_diffusiondet_config, DiffusionDetWithTTA
 from diffusiondet.util.model_ema import add_model_ema_configs, may_build_model_ema, may_get_ema_checkpointer, EMAHook, \
@@ -112,37 +116,11 @@ class Trainer(DefaultTrainer):
             return LVISEvaluator(dataset_name, cfg, True, output_folder)
         else:
             return COCOEvaluator(dataset_name, cfg, True, output_folder)
-    @classmethod
-    def dataset_mapper(self, img_path,annotations_path):
-        ls = []
-        for id, filename in enumerate(os.listdir(img_path)):
-            image  = {}
-            image['file_name'] = img_path + filename
-            img = cv2.imread(image['file_name'])
-            image['height'] = img.shape[0]
-            image['width'] = img.shape[1]
-            image['image_id'] = id
-            filename.split('.')[0]
-            instances = []
-            with open(annotations_path+filename.split('.')[0]+'.txt', 'r') as f:
-                for line in f.readlines():
-                    instance = {}
-                    coords = line.split(',')[:4]
-                    instance['bbox'] = list(map(int, coords))
-                    instance['bbox_mode'] = 1
-                    instance['category_id'] = int(line.split(',')[5])
-                    instances.append(instance)
-            image['annotations'] = instances
-            ls.append(image)
-        return ls 
 
     @classmethod
     def build_train_loader(cls, cfg):
         mapper = DiffusionDetDatasetMapper(cfg, is_train=True)
-        img_path = 'data/VisDrone2019-DET-train/images/'
-        annotations_path = 'data/VisDrone2019-DET-train/annotations/'
-        dataset = cls.dataset_mapper(img_path, annotations_path)
-        return build_detection_train_loader(cfg, dataset = dataset, mapper=mapper)
+        return build_detection_train_loader(cfg, mapper=mapper)
   
 
 
@@ -287,13 +265,27 @@ def setup(args):
     cfg.freeze()
     default_setup(cfg, args)
     return cfg
+import csv
+def results_to_csv(results, runs):
+    keys, values = ["#runs"], []
+    for result, run in zip(results, runs): 
+        for _, bbox in result.items():
+            cols = [run]
+            for key, value in bbox.items():
+                keys.append(key)
+                cols.append(value)
+            values.append(cols)
 
+    with open("frequencies.csv", "w") as outfile:
+        csvwriter = csv.writer(outfile)
+        csvwriter.writerow(keys)
+        for value in values:
+            csvwriter.writerow(value)
 
 def main(args):
     cfg = setup(args)
-
     if args.eval_only:
-        model = Trainer.build_model(cfg)
+        model = Trainer.build_model(cfg)       
         kwargs = may_get_ema_checkpointer(cfg, model)
         if cfg.MODEL_EMA.ENABLED:
             EMADetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR, **kwargs).resume_or_load(cfg.MODEL.WEIGHTS,
@@ -301,21 +293,31 @@ def main(args):
         else:
             DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR, **kwargs).resume_or_load(cfg.MODEL.WEIGHTS,
                                                                                            resume=args.resume)
-        res = Trainer.ema_test(cfg, model)
-        if cfg.TEST.AUG.ENABLED:
-            res.update(Trainer.test_with_TTA(cfg, model))
-        if comm.is_main_process():
-            verify_results(cfg, res)
+        runs = [1,5,10,20]
+        results = []
+        for run in runs:
+            model.set_runs(run)
+            res = Trainer.ema_test(cfg, model)
+            if cfg.TEST.AUG.ENABLED:
+                res.update(Trainer.test_with_TTA(cfg, model))
+            if comm.is_main_process():
+                verify_results(cfg, res)
+            results.append(res)
+        results_to_csv(results, runs)
         return res
-
+    
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
     return trainer.train()
 
-
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()
     print("Command Line Args:", args)
+
+    DatasetCatalog.register("visdrone_train", dataset_mapper)
+    MetadataCatalog.get("visdrone_train").thing_classes = ["ignored_regions","pedestrian", "people","bicyle","car","van", "truck","tricycle","awning-tricyle","bus","motor", "others"]
+    DatasetCatalog.register("visdrone_val", dataset_mapper)
+    MetadataCatalog.get("visdrone_val").thing_classes = ["ignored_regions","pedestrian", "people","bicyle","car","van", "truck","tricycle","awning-tricyle","bus","motor", "others"]
     launch(
         main,
         args.num_gpus,

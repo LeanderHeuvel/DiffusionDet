@@ -17,12 +17,11 @@ import weakref
 from typing import Any, Dict, List, Set
 import logging
 from collections import OrderedDict
-import cv2
 
 import torch
 from fvcore.nn.precise_bn import get_bn_modules
 
-from dataset import dataset_mapper
+from dataset import dataset_mapper, coco_dataset_mapper
 
 import detectron2.utils.comm as comm
 from detectron2.utils.logger import setup_logger
@@ -268,13 +267,14 @@ def setup(args):
 import csv
 def results_to_csv(results, runs):
     keys, values = ["#runs"], []
+    for key, _ in results[0]['bbox'].items():
+        keys.append(key)
     for result, run in zip(results, runs): 
-        for _, bbox in result.items():
-            cols = [run]
-            for key, value in bbox.items():
-                keys.append(key)
-                cols.append(value)
-            values.append(cols)
+        bbox = result['bbox']
+        cols = [run]
+        for key, value in bbox.items():
+            cols.append(value)
+        values.append(cols)
 
     with open("frequencies.csv", "w") as outfile:
         csvwriter = csv.writer(outfile)
@@ -293,7 +293,7 @@ def main(args):
         else:
             DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR, **kwargs).resume_or_load(cfg.MODEL.WEIGHTS,
                                                                                            resume=args.resume)
-        runs = [1,5,10,20]
+        runs = [1]
         results = []
         for run in runs:
             model.set_runs(run)
@@ -313,6 +313,10 @@ def main(args):
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()
     print("Command Line Args:", args)
+    
+    DatasetCatalog.register("coco_val", coco_dataset_mapper)
+    MetadataCatalog.get("coco_val").thing_classes = MetadataCatalog.get("coco_2017_val").thing_classes
+    
 
     DatasetCatalog.register("visdrone_train", dataset_mapper)
     MetadataCatalog.get("visdrone_train").thing_classes = ["ignored_regions","pedestrian", "people","bicyle","car","van", "truck","tricycle","awning-tricyle","bus","motor", "others"]

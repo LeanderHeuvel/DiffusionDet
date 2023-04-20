@@ -81,10 +81,13 @@ class DiffusionDet(nn.Module):
         self.hidden_dim = cfg.MODEL.DiffusionDet.HIDDEN_DIM
         self.num_heads = cfg.MODEL.DiffusionDet.NUM_HEADS
         self.meta_data = cfg.DATASETS.TEST
+        self.dataset_name = cfg.DATASETS.TEST[0]
         self.runs = 1
+        self.threshold = 0.5
         # Build Backbone.
         self.backbone = build_backbone(cfg)
         self.size_divisibility = self.backbone.size_divisibility
+        self.predict_subset = False
 
         # build diffusion
         timesteps = 1000
@@ -104,7 +107,7 @@ class DiffusionDet(nn.Module):
         self.ddim_sampling_eta = 1.
         self.self_condition = False
         self.scale = cfg.MODEL.DiffusionDet.SNR_SCALE
-        self.box_renewal = False
+        self.box_renewal = True
         self.use_ensemble = True
 
         self.register_buffer('betas', betas)
@@ -166,6 +169,9 @@ class DiffusionDet(nn.Module):
         pixel_std = torch.Tensor(cfg.MODEL.PIXEL_STD).to(self.device).view(3, 1, 1)
         self.normalizer = lambda x: (x - pixel_mean) / pixel_std
         self.to(self.device)
+        
+    def set_threshold(self, threshold):
+        self.threshold = threshold
 
     def predict_noise_from_start(self, x_t, t, x0):
         return (
@@ -221,10 +227,9 @@ class DiffusionDet(nn.Module):
 
             if self.box_renewal:  # filter
                 score_per_image, box_per_image = outputs_class[-1][0], outputs_coord[-1][0]
-                threshold = 0.5
                 score_per_image = torch.sigmoid(score_per_image)
                 value, _ = torch.max(score_per_image, -1, keepdim=False)
-                keep_idx = value > threshold
+                keep_idx = value > self.threshold
                 num_remain = torch.sum(keep_idx)
 
                 pred_noise = pred_noise[:, keep_idx, :]
@@ -317,7 +322,8 @@ class DiffusionDet(nn.Module):
             for results_per_image, input_per_image, image_size in zip(results, batched_inputs, images.image_sizes):
                 height = input_per_image.get("height", image_size[0])
                 width = input_per_image.get("width", image_size[1])
-                r = detector_postprocess(results_per_image, height, width)
+                # r = detector_postprocess(results_per_image, height, width)
+                r = results_per_image
                 processed_results.append({"instances": r})
             return processed_results
         
@@ -360,12 +366,13 @@ class DiffusionDet(nn.Module):
         if not self.training:
             for i in range(self.runs):
                 results = self.ddim_sample(batched_inputs, features, images_whwh, images)
+                self.trajectory_tracker.reset()
                 for idx, result in enumerate(results):
                     filename = batched_inputs[idx]['file_name']
                     self.trajectory_tracker.record_instance(filename, result['instances'], i)
             batched_results = self.trajectory_tracker.nms_instances()
-            return [{"instances":self.convert_idxs(result)} for result in batched_results]
-            # return [{"instances":self.trajectory_tracker.nms_instances()}]
+            return [{"instances": self.convert_idxs(result)} for result in batched_results]
+            # return [{"instances":self.trajectory_tracker.nms_instances()[0]}]
             # boxes, idxs = self.trajectory_tracker.generate_analysis()
             # boxes = boxes[0].to(self.device)
             # idxs = idxs[0].to(self.device)
@@ -407,23 +414,26 @@ class DiffusionDet(nn.Module):
                     loss_dict[k] *= weight_dict[k]
             return loss_dict
     def convert_idxs(self, instances):
-        # ["ignored_regions","pedestrian", "people","bicyle","car","van", "truck","tricycle","awning-tricyle","bus","motor", "others"]
-        ## convert idx of car:2, to idx 4
-        ## convert idx of bus:5 to idx 9
-        ## convert idx of truck:7 to idx 6
-        ## convert idx of person:0 to idx 1
-        keep_classes = (instances.pred_classes==2) | (instances.pred_classes==5) | (instances.pred_classes==7) | (instances.pred_classes==0) 
-        instances = instances[keep_classes]
-        car_idx = (instances.pred_classes==2)
-        bus_idx = (instances.pred_classes==5)
-        truck_idx = (instances.pred_classes==7)
-        person_idx = (instances.pred_classes==0)
-        # print(len(instances.pred_classes[truck_idx]))
-        instances.pred_classes[car_idx] = 4
-        instances.pred_classes[bus_idx] = 9
-        instances.pred_classes[truck_idx] = 6
-        instances.pred_classes[person_idx] = 1
+           # ["ignored_regions","pedestrian", "people","bicyle","car","van", "truck","tricycle","awning-tricyle","bus","motor", "others"]
+        # convert idx of car:2, to idx 4
+        # convert idx of bus:5 to idx 9
+        # convert idx of truck:7 to idx 6
+        # convert idx of person:0 to idx 1
+        if self.predict_subset:
+            keep_classes = (instances.pred_classes==2) | (instances.pred_classes==5) | (instances.pred_classes==7) | (instances.pred_classes==0) 
+            instances = instances[keep_classes]
+        # do we need to convert idxs?
+        if not "coco" in self.dataset_name:
+            car_idx = (instances.pred_classes==2)
+            bus_idx = (instances.pred_classes==5)
+            truck_idx = (instances.pred_classes==7)
+            person_idx = (instances.pred_classes==0)
+            instances.pred_classes[car_idx] = 4
+            instances.pred_classes[bus_idx] = 9
+            instances.pred_classes[truck_idx] = 6
+            instances.pred_classes[person_idx] = 1
         return instances
+    
     def prepare_diffusion_repeat(self, gt_boxes):
         """
         :param gt_boxes: (cx, cy, w, h), normalized

@@ -10,12 +10,12 @@ MODEL:
     THRESHOLD: 0.1
     PLOT_BOXES: False
 DATASETS:
-  TRAIN: ("visdrone_train",)
-  TEST:  ("visdrone_val",)
+  TRAIN: ("coco_val",)
+  TEST:  ("coco_val",)
 SOLVER:
   STEPS: (350000, 420000)
   MAX_ITER: 450000
 INPUT:
   CROP:
-    ENABLED: True
+    ENABLED: False
   FORMAT: "RGB"

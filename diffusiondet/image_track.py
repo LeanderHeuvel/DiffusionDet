@@ -248,8 +248,13 @@ class ImageTrack:
         instances_cat = self.cat_instances()
         instances_cat = instances_cat[instances_cat.scores > 0.5]
         keep = batched_nms(instances_cat.pred_boxes.tensor, instances_cat.scores, instances_cat.pred_classes, 0.5)
-        return instances_cat[keep] 
-
+        return instances_cat[keep]
+    
+    def get_instances(self, threshold = 0.5):
+        instances_cat = self.cat_instances()
+        instances_cat = instances_cat[instances_cat.scores > threshold]
+        return instances_cat
+    
     def __str__(self) -> str: # TODO
         return "ImageTrack object containing ", len(self.instances)," instances"
 

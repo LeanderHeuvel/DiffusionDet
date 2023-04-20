@@ -73,6 +73,7 @@ class DiffusionDetWithTTA(GeneralizedRCNNWithTTA):
             instances.append(instance)
             if self.enable_cvpods_tta:
                 output = self.model.forward(inputs, do_postprocess=False)[0]
+                print(output)
                 if self.enable_scale_filter:
                     pred_boxes = output.get("pred_boxes")
                     keep = self.filter_boxes(pred_boxes.tensor, *self.scale_ranges[idx // factors])

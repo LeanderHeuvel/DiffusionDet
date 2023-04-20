@@ -15,6 +15,9 @@ class TrajectoryTracker:
         self.plot_boxes = cfg.MODEL.DiffusionDet.PLOT_BOXES
         self.threshold = cfg.MODEL.DiffusionDet.THRESHOLD
         self.store = {}
+        
+    def reset(self):
+        self.store = {}
 
     def record_instance(self, path, instance, time):
         if path not in self.store.keys():
@@ -55,6 +58,14 @@ class TrajectoryTracker:
         return store_img(list(self.store.values()))
     
     def nms_instances(self):
+        store_img = np.frompyfunc(lambda x: x.nms_instances(), 1,1)
+        return store_img(list(self.store.values()))
+    
+    def get_instance(self, path, nms = True):
+        if nms:
+            return self.store[path].nms_instances()
+        return self.store[path].get_instance()
+    def get_instances(self):
         store_img = np.frompyfunc(lambda x: x.nms_instances(), 1,1)
         return store_img(list(self.store.values()))
 
